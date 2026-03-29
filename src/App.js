@@ -1,11 +1,10 @@
-import React, { useMemo, useState } from 'react';
-import { claims, providers as credentialMatrix } from './data/claims';
-import OverviewPage from './components/OverviewPage';
-import DenialPatternsPage from './components/DenialPatternsPage';
-import PayerPage from './components/PayerPage';
-import ProviderPage from './components/ProviderPage';
-import ClaimsLogPage from './components/ClaimsLogPage';
-import PlanPage from './components/PlanPage';
+import React, { useState } from 'react';
+import Overview from './Overview';
+import DenialPatterns from './DenialPatterns';
+import ByPayer from './ByPayer';
+import ByProvider from './ByProvider';
+import ClaimsLog from './ClaimsLog';
+import Plan90 from './Plan90';
 
 const NAV_ITEMS = [
   { id: 'overview', label: 'Overview' },
@@ -16,140 +15,104 @@ const NAV_ITEMS = [
   { id: 'plan', label: '90-Day Plan' },
 ];
 
-function summarizeClaims(data) {
-  const deniedClaims = data.filter(item => item.status === 'Denied');
-  const revenueAtRisk = data
-    .filter(item => item.status === 'Denied' || item.status === 'Pending')
-    .reduce((sum, item) => sum + item.riskAmount, 0);
-  const credentialingRisk = data
-    .filter(item => item.denialCluster === 'Credentialing gap')
-    .reduce((sum, item) => sum + item.riskAmount, 0);
-
-  const byStage = ['Front End', 'Authorization', 'Clinical / Coding', 'Billing', 'A/R Follow-up'].map(name => {
-    const rows = data.filter(item => item.rcmStage === name);
-    return {
-      name,
-      claims: rows.length,
-      amount: rows.reduce((sum, item) => sum + item.riskAmount, 0),
-    };
-  });
-
-  const byClusterMap = data.reduce((acc, item) => {
-    if (!acc[item.denialCluster]) {
-      acc[item.denialCluster] = {
-        name: item.denialCluster,
-        claims: 0,
-        amount: 0,
-        rootCause: item.rootCause,
-        severity: item.severity,
-        recoverability: item.recoverability,
-        carc: item.carc,
-      };
-    }
-    acc[item.denialCluster].claims += 1;
-    acc[item.denialCluster].amount += item.riskAmount;
-    return acc;
-  }, {});
-
-  const clusters = Object.values(byClusterMap).sort((a, b) => b.amount - a.amount);
-  const totalClusterAmount = clusters.reduce((sum, item) => sum + item.amount, 0);
-  const clusterBars = clusters.slice(0, 6).map(item => ({
-    ...item,
-    share: totalClusterAmount ? item.amount / totalClusterAmount : 0,
-  }));
-
-  const payerSummary = Object.values(data.reduce((acc, item) => {
-    if (!acc[item.payer]) {
-      acc[item.payer] = { name: item.payer, claims: 0, denied: 0, amount: 0, clusters: {} };
-    }
-    acc[item.payer].claims += 1;
-    if (item.status === 'Denied') acc[item.payer].denied += 1;
-    if (item.status === 'Denied' || item.status === 'Pending') acc[item.payer].amount += item.riskAmount;
-    acc[item.payer].clusters[item.denialCluster] = (acc[item.payer].clusters[item.denialCluster] || 0) + 1;
-    return acc;
-  }, {})).map(item => ({
-    ...item,
-    denialRate: item.denied / item.claims,
-    topDriver: Object.entries(item.clusters).sort((a, b) => b[1] - a[1])[0]?.[0] || 'N/A',
-  })).sort((a, b) => b.denialRate - a.denialRate);
-
-  const providerSummary = Object.values(data.reduce((acc, item) => {
-    if (!acc[item.provider]) {
-      acc[item.provider] = { name: item.provider, specialty: item.specialty, claims: 0, denied: 0, amount: 0, clusters: {} };
-    }
-    acc[item.provider].claims += 1;
-    if (item.status === 'Denied') acc[item.provider].denied += 1;
-    if (item.status === 'Denied' || item.status === 'Pending') acc[item.provider].amount += item.riskAmount;
-    acc[item.provider].clusters[item.denialCluster] = (acc[item.provider].clusters[item.denialCluster] || 0) + 1;
-    return acc;
-  }, {})).map(item => ({
-    ...item,
-    denialRate: item.denied / item.claims,
-    topDriver: Object.entries(item.clusters).sort((a, b) => b[1] - a[1])[0]?.[0] || 'N/A',
-  })).sort((a, b) => b.denialRate - a.denialRate);
-
-  return {
-    metrics: {
-      totalClaims: data.length,
-      deniedClaims: deniedClaims.length,
-      denialRate: deniedClaims.length / data.length,
-      revenueAtRisk,
-      credentialingRisk,
-    },
-    byStage,
-    clusters,
-    clusterBars,
-    payerSummary,
-    providerSummary,
-  };
-}
-
 export default function App() {
   const [page, setPage] = useState('overview');
-
-  const summary = useMemo(() => summarizeClaims(claims), []);
 
   const renderPage = () => {
     switch (page) {
       case 'overview':
-        return <OverviewPage metrics={summary.metrics} stageFlow={summary.byStage} clusterBars={summary.clusterBars} />;
+        return <Overview />;
       case 'patterns':
-        return <DenialPatternsPage clusters={summary.clusters} />;
+        return <DenialPatterns />;
       case 'payer':
-        return <PayerPage payers={summary.payerSummary} />;
+        return <ByPayer />;
       case 'provider':
-        return <ProviderPage providers={summary.providerSummary} credentialMatrix={credentialMatrix} />;
+        return <ByProvider />;
       case 'claims':
-        return <ClaimsLogPage claims={claims} />;
+        return <ClaimsLog />;
       case 'plan':
-        return <PlanPage />;
+        return <Plan90 />;
       default:
-        return null;
+        return <Overview />;
     }
   };
 
   return (
-    <div className="app-shell">
-      <div className="topbar">
-        <div>
-          <div className="brand-title">QMH Behavioral Partners</div>
-          <div className="brand-subtitle">
-            Denial Analysis Suite • Multi-specialty behavioral health group in Georgia (Psych, Therapy, ABA)
+    <div
+      style={{
+        fontFamily: 'var(--font-sans)',
+        color: 'var(--color-text-primary)',
+        minHeight: '100vh',
+        background: '#fafaf8',
+      }}
+    >
+      <div
+        style={{
+          borderBottom: '0.5px solid var(--color-border-tertiary)',
+          padding: '0 24px',
+          background: 'var(--color-background-primary)',
+          position: 'sticky',
+          top: 0,
+          zIndex: 10,
+        }}
+      >
+        <div
+          style={{
+            maxWidth: 1000,
+            margin: '0 auto',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 2,
+            height: 52,
+            overflowX: 'auto',
+          }}
+        >
+          <div
+            style={{
+              fontWeight: 600,
+              fontSize: 14,
+              marginRight: 20,
+              color: 'var(--color-text-primary)',
+              whiteSpace: 'nowrap',
+              letterSpacing: '-0.01em',
+            }}
+          >
+            QMH Behavioral Partners
           </div>
-        </div>
-        <div className="nav-row">
-          {NAV_ITEMS.map(item => (
+
+          {NAV_ITEMS.map((n) => (
             <button
-              key={item.id}
-              className={`nav-btn ${page === item.id ? 'active' : ''}`}
-              onClick={() => setPage(item.id)}
+              key={n.id}
+              onClick={() => setPage(n.id)}
+              style={{
+                background: 'none',
+                border: 'none',
+                padding: '6px 14px',
+                cursor: 'pointer',
+                fontSize: 13,
+                fontWeight: page === n.id ? 500 : 400,
+                color:
+                  page === n.id
+                    ? 'var(--color-text-primary)'
+                    : 'var(--color-text-secondary)',
+                borderBottom:
+                  page === n.id
+                    ? '2px solid var(--color-text-primary)'
+                    : '2px solid transparent',
+                borderRadius: 0,
+                height: 52,
+                whiteSpace: 'nowrap',
+              }}
             >
-              {item.label}
+              {n.label}
             </button>
           ))}
         </div>
       </div>
-      <main className="content">{renderPage()}</main>
+
+      <div style={{ maxWidth: 1000, margin: '0 auto', padding: '28px 24px' }}>
+        {renderPage()}
+      </div>
     </div>
   );
 }
